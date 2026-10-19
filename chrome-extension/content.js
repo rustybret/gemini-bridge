@@ -69,12 +69,35 @@
           root.querySelector('button.stop-button')
         );
       },
+      isComplete() {
+        const responses = document.querySelectorAll(
+          'model-response, .model-response-text, message-content, [data-message-id], model-turn'
+        );
+        if (!responses.length) return false;
+        const last = responses[responses.length - 1];
+        const actionToolbar =
+          last.querySelector('button[aria-label*="Good response" i]') ||
+          last.querySelector('button[aria-label*="Copy" i]') ||
+          last.querySelector('button[data-test-id*="copy"]') ||
+          last.querySelector('button[aria-label*="Share" i]') ||
+          last.querySelector('.response-actions, [data-test-id*="response-actions"]');
+        return Boolean(actionToolbar);
+      },
       getLatestResponseText() {
         const responses = document.querySelectorAll(
           'model-response, .model-response-text, message-content, [data-message-id], model-turn'
         );
         if (responses.length > 0) {
           const last = responses[responses.length - 1];
+
+          // Extract generated images if present
+          const imgElements = Array.from(
+            last.querySelectorAll('img[src*="googleusercontent"], img[src*="blob:"], .image-container img, picture img')
+          ).filter((img) => img.src && !img.src.includes('avatar') && !img.src.includes('profile') && !img.src.includes('sparkle'));
+
+          const imageDesc = imgElements.length
+            ? imgElements.map((img) => `\n\n![${img.alt || 'Generated Image'}](${img.src})`).join('\n')
+            : '';
 
           // Look for markdown element specifically outside thought blocks
           const allMarkdowns = Array.from(last.querySelectorAll('.markdown, message-content, .model-response-text'));
@@ -87,11 +110,11 @@
 
           for (let i = responseElements.length - 1; i >= 0; i--) {
             const text = (responseElements[i].innerText || responseElements[i].textContent || '').trim();
-            if (text.length > 0) return text;
+            if (text.length > 0) return text + imageDesc;
           }
 
-          // Fallback: full text of the turn
-          return (last.innerText || last.textContent || '').trim();
+          const fallback = (last.innerText || last.textContent || '').trim();
+          return (fallback || '') + imageDesc;
         }
         const markdowns = document.querySelectorAll('.markdown');
         if (markdowns.length > 0) {
@@ -450,15 +473,18 @@
           return false;
         })();
 
-        if (hasStarted && !stopBtn && !isThinkingOnly && currentText.length > 0) {
+        const isTurnFinished = currentAdapter.isComplete ? currentAdapter.isComplete() : false;
+
+        if (hasStarted && (isTurnFinished || (!stopBtn && !isThinkingOnly && currentText.length > 0))) {
           if (!settledTimer) {
+            const waitMs = isTurnFinished ? 800 : 2500;
             settledTimer = setTimeout(() => {
               clearInterval(checkInterval);
               const finalText = currentAdapter.getLatestResponseText();
               resolve(finalText);
-            }, 2500);
+            }, waitMs);
           }
-        } else if ((stopBtn || isThinkingOnly) && settledTimer) {
+        } else if ((stopBtn || isThinkingOnly) && !isTurnFinished && settledTimer) {
           clearTimeout(settledTimer);
           settledTimer = null;
         }
