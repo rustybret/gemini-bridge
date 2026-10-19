@@ -98,6 +98,20 @@ const server = http.createServer((req, res) => {
         );
         return;
       }
+      if (req.url === '/humanize') {
+        let text = data.prompt || data.text || '';
+        text = text.replace(/^\[User\]:\s*/i, '');
+        text = text.replace(/\n{3,}/g, '\n\n');
+        text = text.trim();
+        res.writeHead(200);
+        res.end(
+          JSON.stringify({
+            status: 'ok',
+            humanized: text
+          })
+        );
+        return;
+      }
 
       if (req.url === '/route') {
         const query = (data.query || '').toLowerCase();

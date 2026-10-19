@@ -245,9 +245,51 @@ async function runAgentLoop(userGoal) {
   }
 }
 
-function formatOpenAIMessagesToPrompt(messages, toolsList) {
+async function humanizePrompt(promptText) {
+  if (!promptText) return '';
+  let text = promptText.trim();
+  // Strip artificial [User]: prefixes
+  text = text.replace(/^\[User\]:\s*/i, '');
+  // Collapse excessive blank lines down to at most one blank line
+  text = text.replace(/\n{3,}/g, '\n\n');
+  text = text
+    .split('\n')
+    .map((l) => l.trimEnd())
+    .join('\n')
+    .trim();
+
+  try {
+    const phoneCheck = await queryPhoneSystem1('/humanize', { prompt: text });
+    if (phoneCheck && phoneCheck.humanized) {
+      text = phoneCheck.humanized;
+    }
+  } catch {}
+
+  return text;
+}
+
+async function formatOpenAIMessagesToPrompt(messages, toolsList) {
+  if (!Array.isArray(messages) || messages.length === 0) return '';
+
+  const hasTools = Array.isArray(toolsList) && toolsList.length > 0;
+
+  // 1. Single direct user message -> clean human message without synthetic role tags
+  if (!hasTools && messages.length === 1 && messages[0].role === 'user') {
+    const content = typeof messages[0].content === 'string'
+      ? messages[0].content
+      : JSON.stringify(messages[0].content);
+    return await humanizePrompt(content);
+  }
+
+  // 2. System instruction + single user prompt -> clean natural instruction followed by prompt
+  if (!hasTools && messages.length === 2 && messages[0].role === 'system' && messages[1].role === 'user') {
+    const sysContent = typeof messages[0].content === 'string' ? messages[0].content : JSON.stringify(messages[0].content);
+    const userContent = typeof messages[1].content === 'string' ? messages[1].content : JSON.stringify(messages[1].content);
+    return await humanizePrompt(`${sysContent.trim()}\n\n${userContent.trim()}`);
+  }
+
   let prompt = '';
-  if (Array.isArray(toolsList) && toolsList.length > 0) {
+  if (hasTools) {
     prompt += `You have access to the following developer tools on the user's laptop:\n`;
     for (const t of toolsList) {
       if (t.function) {
@@ -263,20 +305,23 @@ function formatOpenAIMessagesToPrompt(messages, toolsList) {
 If no tool is needed, simply write your direct response.\n\n`;
   }
 
-  if (Array.isArray(messages)) {
-    prompt += messages
-      .map((m) => {
-        const roleLabel = m.role === 'system' ? 'System' : m.role === 'user' ? 'User' : 'Assistant';
-        const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
-        if (m.tool_call_id || m.role === 'tool') {
-          return `[Tool Result (${m.name || 'output'})]:\n${content}`;
-        }
-        return `[${roleLabel}]:\n${content}`;
-      })
-      .join('\n\n');
-  }
+  prompt += messages
+    .map((m) => {
+      const content = (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)).trim();
+      if (m.tool_call_id || m.role === 'tool') {
+        return `[Tool Result (${m.name || 'output'})]:\n${content}`;
+      }
+      if (m.role === 'system') {
+        return `[System]:\n${content}`;
+      }
+      if (m.role === 'assistant') {
+        return `[Assistant]:\n${content}`;
+      }
+      return `[User]:\n${content}`;
+    })
+    .join('\n\n');
 
-  return prompt;
+  return await humanizePrompt(prompt);
 }
 
 function start() {
@@ -321,7 +366,7 @@ function start() {
           const payload = JSON.parse(body || '{}');
           const stream = payload.stream === true;
           const requestedModel = payload.model || activeModel;
-          const promptText = formatOpenAIMessagesToPrompt(payload.messages || [], payload.tools);
+          const promptText = await formatOpenAIMessagesToPrompt(payload.messages || [], payload.tools);
 
           if (!activeSocket) {
             res.writeHead(503, { 'Content-Type': 'application/json' });

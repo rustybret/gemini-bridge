@@ -58,8 +58,10 @@
       },
       findStopButton() {
         return (
-          document.querySelector('button[aria-label*="Stop response"]') ||
-          document.querySelector('button[aria-label*="Stop"]') ||
+          document.querySelector('button[aria-label*="Stop response" i]') ||
+          document.querySelector('button[aria-label*="Stop" i]') ||
+          document.querySelector('button[data-test-id="stop-button"]') ||
+          document.querySelector('button[mattooltip*="Stop" i]') ||
           document.querySelector('button.stop-button') ||
           document.querySelector('.stop-button-container button')
         );
@@ -299,11 +301,10 @@
 
   // 5. Prompt Injection and Submission
   function injectPrompt(text) {
-    const input = currentAdapter.findInputBox();
-    if (!input) {
-      console.error(`[Agent Bridge] Input element not found on ${platform}`);
-      return false;
+    if (typeof text === 'string') {
+      text = text.replace(/^\[User\]:\s*/i, '').replace(/\n{3,}/g, '\n\n').trim();
     }
+    const input = currentAdapter.findInputBox();
 
     input.focus();
     input.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
@@ -382,11 +383,21 @@
     return new Promise((resolve) => {
       let settledTimer = null;
       let hasStarted = false;
+      let lastSeenText = '';
       const startTime = Date.now();
 
       const checkInterval = setInterval(() => {
         const stopBtn = currentAdapter.findStopButton();
         const currentText = currentAdapter.getLatestResponseText();
+
+        // Reset settled timer whenever response text is actively streaming/changing
+        if (currentText !== lastSeenText) {
+          lastSeenText = currentText;
+          if (settledTimer) {
+            clearTimeout(settledTimer);
+            settledTimer = null;
+          }
+        }
 
         if (stopBtn) {
           hasStarted = true;
@@ -398,15 +409,18 @@
           setStatus('busy');
         }
 
-        if (hasStarted && !stopBtn) {
+        // In Gemini Thinking/Argon models, "Thinking it through…" is a transient state
+        const isThinkingOnly = /^Thinking\s*(it\s*through)?…*\s*$/i.test(currentText.trim());
+
+        if (hasStarted && !stopBtn && !isThinkingOnly && currentText.length > 0) {
           if (!settledTimer) {
             settledTimer = setTimeout(() => {
               clearInterval(checkInterval);
               const finalText = currentAdapter.getLatestResponseText();
               resolve(finalText);
-            }, 1200);
+            }, 1500);
           }
-        } else if (stopBtn && settledTimer) {
+        } else if ((stopBtn || isThinkingOnly) && settledTimer) {
           clearTimeout(settledTimer);
           settledTimer = null;
         }
