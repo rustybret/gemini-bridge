@@ -626,7 +626,6 @@ function start() {
           if (data.model) activeModel = data.model;
           console.log(`\n\x1b[32m[Bridge Connected]\x1b[0m ${activePlatform} tab attached on ws://localhost:${WS_PORT}`);
           console.log(`\x1b[35m[Active Session]\x1b[0m Platform: ${activePlatform} | Model: ${activeModel}`);
-        }
         } else if (data.type === 'RESPONSE' && pendingResponseResolver) {
           const resolve = pendingResponseResolver;
           pendingResponseResolver = null;
