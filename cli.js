@@ -411,6 +411,7 @@ function start() {
         })
       );
       return;
+    }
 
     if ((req.method === 'POST' || req.method === 'GET') && req.url.startsWith('/v1/switch')) {
       const urlObj = new URL(req.url, 'http://localhost');
