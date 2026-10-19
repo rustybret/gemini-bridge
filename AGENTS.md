@@ -13,6 +13,7 @@ Universal webchat harness and local agent bridge connecting developer tools and 
 ├── cli.js                  # Combined HTTP proxy (/v1), WebSocket server, and agent REPL
 ├── tools.js                # Sandboxed local OS runners (run_command, read_file, write_file)
 ├── launch-headless.sh      # Background Chrome daemon launcher with custom profile isolation
+├── launch-standalone.sh    # Visible standalone Chrome launcher with custom profile isolation
 ├── chrome-extension/       # MV3 content script and DOM adapters for webchat automation
 └── phone-bridge/           # Android Termux microservice and ADB reverse socket forwarder
 ```
@@ -26,6 +27,7 @@ Universal webchat harness and local agent bridge connecting developer tools and 
 | Extension configuration | `chrome-extension/manifest.json` | Host permissions for Gemini, ChatGPT, Claude |
 | Android System 1 offload | `phone-bridge/phone_laya_server.js` | `/risk` destructive check and `/prune` output reducer |
 | ADB reverse setup | `phone-bridge/adb_connect.sh` | Port 8000 socket forwarding to phone |
+| Standalone / visible browser launcher | `launch-standalone.sh` | Visible Chrome with extension preloaded |
 | Background browser launcher | `launch-headless.sh` | Chrome `--headless=new` and profile management |
 
 ## CODE MAP
@@ -62,6 +64,7 @@ Universal webchat harness and local agent bridge connecting developer tools and 
 ```bash
 npm start                  # Start CLI orchestrator and OpenAI proxy on :8765
 npm test                   # Fast syntax and configuration smoke verification
+npm run standalone         # Launch visible standalone Chrome tab with extension
 npm run headless           # Launch background Chrome daemon on gemini.google.com
 npm run headless:login     # Launch visible Chrome once to establish authenticated session
 node cli.js --port 9000    # Run bridge on custom port
