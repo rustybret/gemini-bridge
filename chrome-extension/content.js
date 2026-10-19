@@ -139,8 +139,11 @@
       findInputBox() {
         return (
           document.querySelector('#prompt-textarea') ||
+          document.querySelector('div#prompt-textarea') ||
           document.querySelector('textarea[data-id="root"]') ||
           document.querySelector('div#prompt-textarea[contenteditable="true"]') ||
+          document.querySelector('div[contenteditable="true"][role="textbox"]') ||
+          document.querySelector('.ProseMirror[contenteditable="true"]') ||
           document.querySelector('textarea')
         );
       },
@@ -148,22 +151,38 @@
         return (
           document.querySelector('button[data-testid="send-button"]') ||
           document.querySelector('button[data-testid="fruitjuice-send-button"]') ||
-          document.querySelector('button[aria-label*="Send prompt"]') ||
-          document.querySelector('button[aria-label*="Send"]')
+          document.querySelector('button[data-testid*="send"]') ||
+          document.querySelector('button[aria-label*="Send prompt" i]') ||
+          document.querySelector('button[aria-label*="Send message" i]') ||
+          document.querySelector('button[aria-label="Send"]') ||
+          document.querySelector('button.composer-submit-btn')
         );
       },
       findStopButton() {
         return (
           document.querySelector('button[data-testid="stop-button"]') ||
-          document.querySelector('button[aria-label*="Stop generating"]') ||
-          document.querySelector('button[aria-label*="Stop"]')
+          document.querySelector('button[data-testid*="stop"]') ||
+          document.querySelector('button[aria-label*="Stop generating" i]') ||
+          document.querySelector('button[aria-label*="Stop" i]')
         );
+      },
+      isComplete() {
+        const assistants = document.querySelectorAll('[data-message-author-role="assistant"], .agent-turn');
+        if (!assistants.length) return false;
+        const last = assistants[assistants.length - 1];
+        const copyBtn =
+          last.querySelector('button[data-testid*="copy"]') ||
+          last.querySelector('button[aria-label*="Copy" i]') ||
+          last.querySelector('button[data-testid*="thumbs"]') ||
+          last.querySelector('button[aria-label*="Good response" i]') ||
+          last.querySelector('button[aria-label*="Read aloud" i]');
+        return Boolean(copyBtn);
       },
       getLatestResponseText() {
         const assistants = document.querySelectorAll('[data-message-author-role="assistant"], .agent-turn');
         if (assistants.length > 0) {
           const last = assistants[assistants.length - 1];
-          const markdown = last.querySelector('.markdown') || last;
+          const markdown = last.querySelector('.markdown, div.prose') || last;
           return (markdown.innerText || markdown.textContent || '').trim();
         }
         return '';
@@ -359,15 +378,23 @@
     }
 
     // Rich contenteditable / ProseMirror elements
-    while (input.firstChild) {
-      input.removeChild(input.firstChild);
-    }
+    try {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(input);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    } catch {}
 
     const inserted = document.execCommand('insertText', false, text);
     if (!inserted) {
-      input.innerText = text;
+      input.textContent = text;
     }
 
+    if (typeof InputEvent === 'function') {
+      input.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: text, bubbles: true, cancelable: true }));
+      input.dispatchEvent(new InputEvent('input', { inputType: 'insertText', data: text, bubbles: true }));
+    }
     input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
     input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
     return true;
