@@ -411,6 +411,21 @@ function start() {
         })
       );
       return;
+
+    if ((req.method === 'POST' || req.method === 'GET') && req.url.startsWith('/v1/switch')) {
+      const urlObj = new URL(req.url, 'http://localhost');
+      const target = urlObj.searchParams.get('platform') || 'gemini';
+      const sock = platformSockets.get(target.toLowerCase());
+      if (sock && sock.readyState === 1) {
+        activeSocket = sock;
+        activePlatform = target.charAt(0).toUpperCase() + target.slice(1).toLowerCase();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', activePlatform, connectedPlatforms: Array.from(platformSockets.keys()) }));
+      } else {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Platform '${target}' not connected. Available: ${Array.from(platformSockets.keys()).join(', ')}` }));
+      }
+      return;
     }
 
     if (req.method === 'GET' && req.url === '/v1/models') {
