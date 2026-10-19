@@ -4,3 +4,16 @@ package-lock.json
 .DS_Store
 *.tmp
 .env
+.ucs/
+.tmp/
+
+# Ignore everything under .omo by default, preserving whitelisted directories
+.omo/*
+!.omo/drafts/
+!.omo/drafts/**
+!.omo/notepads/
+!.omo/notepads/**
+!.omo/plans/
+!.omo/plans/**
+!.omo/athena/
+!.omo/athena/**
