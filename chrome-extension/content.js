@@ -542,6 +542,28 @@
   async function executeAction(actionMsg) {
     const { action, selector, textPattern, target } = actionMsg;
 
+    if (action === 'test_composer') {
+      const input = currentAdapter.findInputBox();
+      const sendBtn = currentAdapter.findSendButton();
+      const allInputs = Array.from(document.querySelectorAll('textarea, [contenteditable="true"], [role="textbox"]')).map((el) => ({
+        tag: el.tagName,
+        id: el.id,
+        className: (el.className || '').toString().slice(0, 50),
+        role: el.getAttribute('role'),
+        placeholder: el.getAttribute('placeholder') || el.getAttribute('data-placeholder') || '',
+        width: Math.round(el.getBoundingClientRect().width),
+        height: Math.round(el.getBoundingClientRect().height)
+      }));
+      return {
+        platform,
+        inputFound: Boolean(input),
+        inputInfo: input ? { tag: input.tagName, id: input.id, class: (input.className || '').toString().slice(0, 50), html: input.outerHTML.slice(0, 200) } : null,
+        sendBtnFound: Boolean(sendBtn),
+        sendBtnInfo: sendBtn ? { tag: sendBtn.tagName, aria: sendBtn.getAttribute('aria-label'), testId: sendBtn.getAttribute('data-testid'), disabled: sendBtn.disabled } : null,
+        allInputs
+      };
+    }
+
     // 1. Generic Click
     if (action === 'click') {
       let el = null;
