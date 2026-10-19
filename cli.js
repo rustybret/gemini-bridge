@@ -69,6 +69,8 @@ let pendingResponseResolver = null;
 let activePlatform = 'Gemini';
 let activeModel = 'gemini-web';
 const allSockets = new Set();
+const platformSockets = new Map();
+const socketPlatforms = new Map();
 
 function broadcastReload() {
   console.log('\n\x1b[35m[Hot Reload]\x1b[0m Signaling Chrome extension to reload...');
@@ -192,27 +194,37 @@ function queryPhoneSystem1(pathEndpoint, payload) {
 
 let pendingActionResolver = null;
 
-function sendPromptToChrome(promptText) {
+function getSocketForPlatform(targetPlatform) {
+  if (targetPlatform) {
+    const sock = platformSockets.get(targetPlatform.toLowerCase());
+    if (sock && sock.readyState === 1) return sock;
+  }
+  return activeSocket;
+}
+
+function sendPromptToChrome(promptText, targetPlatform) {
   return new Promise((resolve, reject) => {
-    if (!activeSocket) {
+    const targetSocket = getSocketForPlatform(targetPlatform);
+    if (!targetSocket) {
       return reject(
-        new Error(`No browser extension connected. Open ${activePlatform} in Chrome with the extension active.`)
+        new Error(`No browser extension connected for ${targetPlatform || activePlatform}. Open it in Chrome with the extension active.`)
       );
     }
     pendingResponseResolver = resolve;
-    activeSocket.send(JSON.stringify({ type: 'PROMPT', text: promptText, safeMode: isSafeMode }));
+    targetSocket.send(JSON.stringify({ type: 'PROMPT', text: promptText, safeMode: isSafeMode }));
   });
 }
 
-function sendActionToChrome(actionPayload) {
+function sendActionToChrome(actionPayload, targetPlatform) {
   return new Promise((resolve, reject) => {
-    if (!activeSocket) {
+    const targetSocket = getSocketForPlatform(targetPlatform || actionPayload.platform);
+    if (!targetSocket) {
       return reject(
-        new Error(`No browser extension connected. Open ${activePlatform} in Chrome with the extension active.`)
+        new Error(`No browser extension connected for ${targetPlatform || actionPayload.platform || activePlatform}. Open it in Chrome with the extension active.`)
       );
     }
     pendingActionResolver = resolve;
-    activeSocket.send(JSON.stringify(actionPayload));
+    targetSocket.send(JSON.stringify(actionPayload));
     setTimeout(() => {
       if (pendingActionResolver === resolve) {
         pendingActionResolver = null;
@@ -394,6 +406,7 @@ function start() {
           connected: true,
           platform: activePlatform,
           model: activeModel,
+          connectedPlatforms: Array.from(platformSockets.keys()),
           safeMode: isSafeMode
         })
       );
@@ -482,8 +495,18 @@ function start() {
             return;
           }
 
-          console.log(`\n\x1b[36m[OpenAI Proxy] Routing request for '${requestedModel}' to ${activePlatform}...\x1b[0m`);
-          const responseText = await sendPromptToChrome(promptText);
+          let targetPlatform = null;
+          const lowerModel = requestedModel.toLowerCase();
+          if (lowerModel.includes('chatgpt') || lowerModel.includes('gpt')) {
+            targetPlatform = 'ChatGPT';
+          } else if (lowerModel.includes('gemini') || lowerModel.includes('argon')) {
+            targetPlatform = 'Gemini';
+          } else if (lowerModel.includes('claude') || lowerModel.includes('fable') || lowerModel.includes('opus')) {
+            targetPlatform = 'Claude';
+          }
+
+          console.log(`\n\x1b[36m[OpenAI Proxy] Routing request for '${requestedModel}' to ${targetPlatform || activePlatform}...\x1b[0m`);
+          const responseText = await sendPromptToChrome(promptText, targetPlatform);
           const toolCall = parseToolCall(responseText);
 
           if (stream) {
@@ -594,10 +617,16 @@ function start() {
 
         if (data.type === 'HELLO' || data.type === 'STATUS') {
           activeSocket = ws;
-          if (data.platform) activePlatform = data.platform;
+          if (data.platform) {
+            activePlatform = data.platform;
+            const pKey = data.platform.toLowerCase();
+            platformSockets.set(pKey, ws);
+            socketPlatforms.set(ws, pKey);
+          }
           if (data.model) activeModel = data.model;
           console.log(`\n\x1b[32m[Bridge Connected]\x1b[0m ${activePlatform} tab attached on ws://localhost:${WS_PORT}`);
           console.log(`\x1b[35m[Active Session]\x1b[0m Platform: ${activePlatform} | Model: ${activeModel}`);
+        }
         } else if (data.type === 'RESPONSE' && pendingResponseResolver) {
           const resolve = pendingResponseResolver;
           pendingResponseResolver = null;
@@ -616,9 +645,14 @@ function start() {
 
     ws.on('close', () => {
       allSockets.delete(ws);
+      const pKey = socketPlatforms.get(ws);
+      if (pKey && platformSockets.get(pKey) === ws) {
+        platformSockets.delete(pKey);
+      }
+      socketPlatforms.delete(ws);
       if (activeSocket === ws) {
         console.log('\n\x1b[31m[Bridge Disconnected]\x1b[0m Browser webchat tab detached.');
-        activeSocket = null;
+        activeSocket = platformSockets.values().next().value || null;
       }
     });
   });
