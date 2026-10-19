@@ -95,7 +95,6 @@ if [ "$MODE" == "login" ] || [ "$MODE" == "standalone" ]; then
   "$CHROME_BIN" \
     --user-data-dir="$PROFILE_DIR" \
     --load-extension="$EXT_DIR" \
-    --disable-extensions-except="$EXT_DIR" \
     "$TARGET_URL"
   exit 0
 fi
@@ -115,7 +114,6 @@ nohup "$CHROME_BIN" \
   --no-default-browser-check \
   --user-data-dir="$PROFILE_DIR" \
   --load-extension="$EXT_DIR" \
-  --disable-extensions-except="$EXT_DIR" \
   "$TARGET_URL" > /dev/null 2>&1 &
 
 CHROME_PID=$!
