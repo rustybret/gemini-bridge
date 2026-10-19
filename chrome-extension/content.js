@@ -72,7 +72,24 @@
         );
         if (responses.length > 0) {
           const last = responses[responses.length - 1];
-          const markdownBody = last.querySelector('.markdown') || last;
+
+          // First look for .markdown elements outside thought/collapsible containers
+          const allMarkdowns = Array.from(last.querySelectorAll('.markdown'));
+          const responseMarkdowns = allMarkdowns.filter(
+            (m) =>
+              !m.closest(
+                '.thought-container, .collapsible-thought, [data-test-id*="thought"], expandable-thought, .thinking-process, details'
+              )
+          );
+
+          if (responseMarkdowns.length > 0) {
+            const body = responseMarkdowns[responseMarkdowns.length - 1];
+            const text = (body.innerText || body.textContent || '').trim();
+            if (text.length > 0) return text;
+          }
+
+          // Fallback to last markdown or turn container
+          const markdownBody = allMarkdowns[allMarkdowns.length - 1] || last;
           return (markdownBody.innerText || markdownBody.textContent || '').trim();
         }
         const markdowns = document.querySelectorAll('.markdown');
@@ -409,8 +426,28 @@
           setStatus('busy');
         }
 
-        // In Gemini Thinking/Argon models, "Thinking it through…" is a transient state
-        const isThinkingOnly = /^Thinking\s*(it\s*through)?…*\s*$/i.test(currentText.trim());
+        // Check if text is only an intermediate thinking / tool-call status header
+        const isThinkingOnly = (() => {
+          const trimmed = currentText.trim();
+          if (!trimmed) return true;
+          if (/^Thinking\s*(it\s*through)?…*/i.test(trimmed)) {
+            const nonThinking = trimmed
+              .split('\n')
+              .map((l) => l.trim())
+              .filter((l) => {
+                if (!l) return false;
+                if (/^Thinking\s*(it\s*through)?…*/i.test(l)) return false;
+                if (/^I've\s+begun\s+analyzing/i.test(l)) return false;
+                if (/^Searched\s+for/i.test(l)) return false;
+                if (/^Using\s+skill:/i.test(l)) return false;
+                if (/^Working\s+on/i.test(l)) return false;
+                if (/^Reading\s+/i.test(l)) return false;
+                return true;
+              });
+            return nonThinking.length === 0;
+          }
+          return false;
+        })();
 
         if (hasStarted && !stopBtn && !isThinkingOnly && currentText.length > 0) {
           if (!settledTimer) {
@@ -418,7 +455,7 @@
               clearInterval(checkInterval);
               const finalText = currentAdapter.getLatestResponseText();
               resolve(finalText);
-            }, 1500);
+            }, 3500);
           }
         } else if ((stopBtn || isThinkingOnly) && settledTimer) {
           clearTimeout(settledTimer);
