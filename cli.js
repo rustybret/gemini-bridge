@@ -26,6 +26,7 @@ USAGE:
 
 OPTIONS:
   -p, --port <number>   Port for WebSocket server and OpenAI HTTP proxy (default: 8765)
+  -H, --host <ip>       Host interface to bind server to (default: 127.0.0.1)
   -d, --daemon          Run in background daemon mode without interactive REPL
   --safe                Enable humanized pacing and safety delays (default: enabled)
   --fast                Disable safety pacing delays for faster execution
@@ -53,7 +54,14 @@ if (portArgIndex !== -1 && args[portArgIndex + 1]) {
   configuredPort = parseInt(args[portArgIndex + 1], 10) || configuredPort;
 }
 
+let configuredHost = process.env.HOST || '127.0.0.1';
+const hostArgIndex = args.findIndex((arg) => arg === '-H' || arg === '--host');
+if (hostArgIndex !== -1 && args[hostArgIndex + 1]) {
+  configuredHost = args[hostArgIndex + 1];
+}
+
 const WS_PORT = configuredPort;
+const WS_HOST = configuredHost;
 const PHONE_ENDPOINT = process.env.PHONE_ENDPOINT || 'http://localhost:8000';
 
 let activeSocket = null;
@@ -632,10 +640,11 @@ function start() {
     }
   }
 
-  server.listen(WS_PORT, () => {
+  server.listen(WS_PORT, WS_HOST, () => {
     console.log(`\x1b[35m=== Gemini Bridge Orchestrator & Universal Proxy ===\x1b[0m`);
-    console.log(`HTTP/OpenAI API: http://localhost:${WS_PORT}/v1`);
-    console.log(`WebSocket Bridge: ws://localhost:${WS_PORT}`);
+    console.log(`HTTP/OpenAI API: http://${WS_HOST}:${WS_PORT}/v1`);
+    console.log(`WebSocket Bridge: ws://${WS_HOST}:${WS_PORT}`);
+    console.log(`Host Interface:  ${WS_HOST}`);
     console.log(`Safety Mode:     ${isSafeMode ? '\x1b[32mEnabled (1500ms pacing + humanized jitter)\x1b[0m' : '\x1b[33mDisabled (--fast active)\x1b[0m'}`);
     console.log(`Waiting for browser connection (Gemini / ChatGPT / Claude)...`);
   });
