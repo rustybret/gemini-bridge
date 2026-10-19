@@ -7,6 +7,7 @@ Manifest V3 content script providing bi-directional WebSocket communication (`ws
 | Task | Location | Notes |
 |------|----------|-------|
 | Manifest & host permissions | `manifest.json` | Matches `gemini.google.com`, `chatgpt.com`, `chat.openai.com`, `claude.ai` |
+| Background service worker | `background.js` | Connects to ws://localhost:8765, calls chrome.runtime.reload() |
 | DOM adapters & platform detection | `content.js:16-176` | `Adapters.Gemini`, `Adapters.ChatGPT`, `Adapters.Claude` implementations |
 | Human-like click simulation | `content.js:232-298` | Dispatches pointerdown, mousedown, pointerup, mouseup, click sequences |
 | Input injection & submission | `content.js:301-379` | Handles `textarea`, `contenteditable`, and `ProseMirror` targets |

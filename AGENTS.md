@@ -15,7 +15,8 @@ Universal webchat harness and local agent bridge connecting developer tools and 
 ├── launch-headless.sh      # Background Chrome daemon launcher with custom profile isolation
 ├── launch-standalone.sh    # Visible standalone Chrome launcher with custom profile isolation
 ├── chrome-extension/       # MV3 content script and DOM adapters for webchat automation
-└── phone-bridge/           # Android Termux microservice and ADB reverse socket forwarder
+├── scripts/reload-browser.sh # Automated extension and browser tab reloader
+├── chrome-extension/       # MV3 content script, background worker, and DOM adapters
 ```
 
 ## WHERE TO LOOK
@@ -29,7 +30,8 @@ Universal webchat harness and local agent bridge connecting developer tools and 
 | ADB reverse setup | `phone-bridge/adb_connect.sh` | Port 8000 socket forwarding to phone |
 | Standalone / visible browser launcher | `launch-standalone.sh` | Visible Chrome with extension preloaded |
 | Background browser launcher | `launch-headless.sh` | Chrome `--headless=new` and profile management |
-
+| Hot reload & extension refresh | `scripts/reload-browser.sh` | Dispatches /v1/reload and refreshes Chrome tabs |
+| Background service worker | `chrome-extension/background.js` | Receives RELOAD_EXTENSION and calls chrome.runtime.reload() |
 ## CODE MAP
 | Symbol | Type | Location | Refs | Role |
 |--------|------|----------|------|------|
@@ -67,7 +69,8 @@ npm test                   # Fast syntax and configuration smoke verification
 npm run standalone         # Launch visible standalone Chrome tab with extension
 npm run headless           # Launch background Chrome daemon on gemini.google.com
 npm run headless:login     # Launch visible Chrome once to establish authenticated session
-node cli.js --port 9000    # Run bridge on custom port
+npm run reload             # Trigger automated extension reload and tab refresh
+npm run headless:login     # Launch visible Chrome once to establish authenticated session
 node cli.js --fast         # Run without 1500ms safety pacing delays
 ```
 

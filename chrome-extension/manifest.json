@@ -4,8 +4,12 @@
   "version": "1.0.0",
   "description": "Bi-directional WebSocket harness bridge for Gemini, ChatGPT, and Claude web sessions",
   "permissions": [
-    "activeTab"
+    "activeTab",
+    "tabs"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "host_permissions": [
     "https://gemini.google.com/*",
     "https://chatgpt.com/*",

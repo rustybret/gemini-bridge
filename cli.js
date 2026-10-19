@@ -9,6 +9,8 @@
 const { WebSocketServer } = require('ws');
 const readline = require('readline');
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const tools = require('./tools');
 
 // CLI Argument Parsing
@@ -57,7 +59,16 @@ let activeSocket = null;
 let pendingResponseResolver = null;
 let activePlatform = 'Gemini';
 let activeModel = 'gemini-web';
+const allSockets = new Set();
 
+function broadcastReload() {
+  console.log('\n\x1b[35m[Hot Reload]\x1b[0m Signaling Chrome extension to reload...');
+  for (const ws of allSockets) {
+    try {
+      ws.send(JSON.stringify({ type: 'RELOAD_EXTENSION' }));
+    } catch {}
+  }
+}
 const SYSTEM_TOOL_SPEC = `
 You have access to the following local developer tools on the user's laptop.
 To invoke a tool, output a single JSON block wrapped inside a \`\`\`tool_call markdown fence.
@@ -358,6 +369,14 @@ function start() {
       return;
     }
 
+    if (req.method === 'POST' && (req.url === '/v1/reload' || req.url === '/reload')) {
+      broadcastReload();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', message: 'Reload signal broadcast to extension' }));
+      return;
+    }
+
+
     if (req.method === 'POST' && req.url === '/v1/chat/completions') {
       let body = '';
       req.on('data', (chunk) => (body += chunk));
@@ -476,9 +495,9 @@ function start() {
   const wss = new WebSocketServer({ server });
 
   wss.on('connection', (ws) => {
+    allSockets.add(ws);
     activeSocket = ws;
     console.log(`\n\x1b[32m[Bridge Connected]\x1b[0m Browser extension attached on ws://localhost:${WS_PORT}`);
-
     // Send initial configuration to extension
     ws.send(JSON.stringify({ type: 'CONFIG', safeMode: isSafeMode }));
 
@@ -503,9 +522,29 @@ function start() {
 
     ws.on('close', () => {
       console.log('\n\x1b[31m[Bridge Disconnected]\x1b[0m Browser extension detached.');
-      activeSocket = null;
+      allSockets.delete(ws);
+      if (activeSocket === ws) {
+        activeSocket = null;
+      }
     });
   });
+
+  const EXT_DIR = path.resolve(__dirname, 'chrome-extension');
+  let reloadDebounce = null;
+  if (fs.existsSync(EXT_DIR)) {
+    try {
+      fs.watch(EXT_DIR, (eventType, filename) => {
+        if (!filename || filename.startsWith('.')) return;
+        if (reloadDebounce) clearTimeout(reloadDebounce);
+        reloadDebounce = setTimeout(() => {
+          console.log(`\x1b[36m[File Watcher]\x1b[0m Change detected in chrome-extension/${filename}`);
+          broadcastReload();
+        }, 400);
+      });
+    } catch (err) {
+      console.warn('[File Watcher] Warning: could not watch chrome-extension:', err.message);
+    }
+  }
 
   server.listen(WS_PORT, () => {
     console.log(`\x1b[35m=== Gemini Bridge Orchestrator & Universal Proxy ===\x1b[0m`);
@@ -526,6 +565,12 @@ function start() {
   rl.on('line', async (line) => {
     const input = line.trim();
     if (!input) {
+      rl.prompt();
+      return;
+    }
+
+    if (input === 'reload') {
+      broadcastReload();
       rl.prompt();
       return;
     }
