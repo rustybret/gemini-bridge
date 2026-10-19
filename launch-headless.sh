@@ -14,25 +14,66 @@ if [[ "$(basename "$0")" == *"standalone"* ]]; then
   MODE="standalone"
 fi
 
-for arg in "$@"; do
-  case "$arg" in
+SPECIFIED_PROFILE=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --login|-l)
       MODE="login"
+      shift
       ;;
     --standalone|-s)
       MODE="standalone"
+      shift
       ;;
     --headless)
       MODE="headless"
+      shift
+      ;;
+    --profile|-p)
+      SPECIFIED_PROFILE="$2"
+      shift 2
+      ;;
+    --profile=*)
+      SPECIFIED_PROFILE="${1#*=}"
+      shift
       ;;
     --help|-h)
       MODE="help"
+      shift
       ;;
     http://*|https://*)
-      TARGET_URL="$arg"
+      TARGET_URL="$1"
+      shift
+      ;;
+    *)
+      shift
       ;;
   esac
 done
+
+RESOLVED_PROFILE_DIR=""
+if [ -n "$SPECIFIED_PROFILE" ]; then
+  RESOLVED_PROFILE_DIR=$(node -e '
+    const fs = require("fs");
+    const os = require("os");
+    const path = require("path");
+    const target = process.argv[1];
+    const localStatePath = path.join(os.homedir(), "Library/Application Support/Google/Chrome/Local State");
+    if (fs.existsSync(localStatePath)) {
+      try {
+        const data = JSON.parse(fs.readFileSync(localStatePath, "utf8"));
+        const infoCache = data.profile?.info_cache || {};
+        for (const [dir, info] of Object.entries(infoCache)) {
+          if (dir.toLowerCase() === target.toLowerCase()) { console.log(dir); process.exit(0); }
+          if (info.name && info.name.toLowerCase() === target.toLowerCase()) { console.log(dir); process.exit(0); }
+          if (info.user_name && info.user_name.toLowerCase() === target.toLowerCase()) { console.log(dir); process.exit(0); }
+        }
+      } catch {}
+    }
+    console.log(target);
+  ' "$SPECIFIED_PROFILE" 2>/dev/null || echo "$SPECIFIED_PROFILE")
+fi
 
 CHROME_BIN="${CHROME_BIN:-${CHROME_PATH:-}}"
 
@@ -68,6 +109,7 @@ if [ "$MODE" == "help" ]; then
   echo "Usage: $(basename "$0") [OPTIONS] [URL]"
   echo ""
   echo "Options:"
+  echo "  --profile, -p     Launch with specific Chrome profile name, email, or directory (e.g. Bantam)"
   echo "  --standalone, -s  Open visible standalone Chrome tab with extension loaded"
   echo "  --login, -l       Open visible browser once to log into your account"
   echo "  --headless        Launch invisible background daemon (default for launch-headless.sh)"
@@ -92,10 +134,19 @@ if [ "$MODE" == "login" ] || [ "$MODE" == "standalone" ]; then
   echo "Profile:   $PROFILE_DIR"
   echo "URL:       $TARGET_URL"
   echo ""
-  "$CHROME_BIN" \
-    --user-data-dir="$PROFILE_DIR" \
-    --load-extension="$EXT_DIR" \
-    "$TARGET_URL"
+  if [ -n "$RESOLVED_PROFILE_DIR" ]; then
+    echo "Profile Dir: $RESOLVED_PROFILE_DIR"
+    echo ""
+    "$CHROME_BIN" \
+      --profile-directory="$RESOLVED_PROFILE_DIR" \
+      --load-extension="$EXT_DIR" \
+      "$TARGET_URL"
+  else
+    "$CHROME_BIN" \
+      --user-data-dir="$PROFILE_DIR" \
+      --load-extension="$EXT_DIR" \
+      "$TARGET_URL"
+  fi
   exit 0
 fi
 
@@ -106,15 +157,27 @@ echo "Profile:   $PROFILE_DIR"
 echo "URL:       $TARGET_URL"
 echo ""
 
-nohup "$CHROME_BIN" \
-  --headless=new \
-  --disable-gpu \
-  --disable-dev-shm-usage \
-  --no-first-run \
-  --no-default-browser-check \
-  --user-data-dir="$PROFILE_DIR" \
-  --load-extension="$EXT_DIR" \
-  "$TARGET_URL" > /dev/null 2>&1 &
+if [ -n "$RESOLVED_PROFILE_DIR" ]; then
+  nohup "$CHROME_BIN" \
+    --headless=new \
+    --disable-gpu \
+    --disable-dev-shm-usage \
+    --no-first-run \
+    --no-default-browser-check \
+    --profile-directory="$RESOLVED_PROFILE_DIR" \
+    --load-extension="$EXT_DIR" \
+    "$TARGET_URL" > /dev/null 2>&1 &
+else
+  nohup "$CHROME_BIN" \
+    --headless=new \
+    --disable-gpu \
+    --disable-dev-shm-usage \
+    --no-first-run \
+    --no-default-browser-check \
+    --user-data-dir="$PROFILE_DIR" \
+    --load-extension="$EXT_DIR" \
+    "$TARGET_URL" > /dev/null 2>&1 &
+fi
 
 CHROME_PID=$!
 echo "✓ Headless Chrome daemon running in background (PID: $CHROME_PID)"
