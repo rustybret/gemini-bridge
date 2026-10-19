@@ -741,14 +741,14 @@
         if (msg.type === 'INSPECT') {
           const elements = [];
           const selectors =
-            'button, [role="button"], [role="menuitem"], [role="tab"], [role="option"], [role="radio"], mat-chip, .model-pill, [data-test-id], a, select, input';
+            'button, [role="button"], [role="menuitem"], [role="tab"], [role="option"], [role="radio"], mat-chip, .model-pill, [data-test-id], a, select, input, textarea, [contenteditable="true"], [role="textbox"]';
           document.querySelectorAll(selectors).forEach((el) => {
             const text = (el.innerText || el.textContent || '').trim();
             const ariaLabel = el.getAttribute('aria-label') || '';
-            const testId = el.getAttribute('data-test-id') || '';
+            const testId = el.getAttribute('data-test-id') || el.getAttribute('data-testid') || '';
             const role = el.getAttribute('role') || el.tagName.toLowerCase();
             const rect = el.getBoundingClientRect();
-            if ((text || ariaLabel || testId) && rect.width > 0 && rect.height > 0) {
+            if ((text || ariaLabel || testId || el.id || role === 'textbox' || el.tagName.toLowerCase() === 'textarea') && rect.width > 0 && rect.height > 0) {
               elements.push({
                 tag: el.tagName.toLowerCase(),
                 role,
@@ -760,13 +760,22 @@
               });
             }
           });
+
+          const activeInput = currentAdapter.findInputBox();
+          const activeSendBtn = currentAdapter.findSendButton();
+
           socket.send(
             JSON.stringify({
               type: 'INSPECT_RESULT',
               platform,
               url: window.location.href,
               currentModel: currentAdapter.getModelName(),
-              elements
+              inputFound: Boolean(activeInput),
+              inputTag: activeInput ? activeInput.tagName : null,
+              inputId: activeInput ? activeInput.id : null,
+              sendBtnFound: Boolean(activeSendBtn),
+              sendBtnDisabled: activeSendBtn ? Boolean(activeSendBtn.disabled || activeSendBtn.getAttribute('aria-disabled') === 'true') : null,
+              elements: elements.slice(-25)
             })
           );
           return;
