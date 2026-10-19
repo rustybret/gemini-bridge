@@ -367,6 +367,30 @@ function start() {
       res.end();
       return;
     }
+    if (req.method === 'GET' && (req.url === '/v1/status' || req.url === '/v1/health' || req.url === '/healthz')) {
+      if (!activeSocket) {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            status: 'waiting_for_browser',
+            connected: false,
+            message: `No browser extension is currently connected on ws://localhost:${WS_PORT}`
+          })
+        );
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          status: 'ok',
+          connected: true,
+          platform: activePlatform,
+          model: activeModel,
+          safeMode: isSafeMode
+        })
+      );
+      return;
+    }
 
     if (req.method === 'GET' && req.url === '/v1/models') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
