@@ -110,6 +110,7 @@ echo ""
 nohup "$CHROME_BIN" \
   --headless=new \
   --disable-gpu \
+  --disable-dev-shm-usage \
   --no-first-run \
   --no-default-browser-check \
   --user-data-dir="$PROFILE_DIR" \

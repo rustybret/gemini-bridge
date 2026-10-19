@@ -26,6 +26,7 @@ USAGE:
 
 OPTIONS:
   -p, --port <number>   Port for WebSocket server and OpenAI HTTP proxy (default: 8765)
+  -d, --daemon          Run in background daemon mode without interactive REPL
   --safe                Enable humanized pacing and safety delays (default: enabled)
   --fast                Disable safety pacing delays for faster execution
   -t, --test            Verify syntax, test configuration, and exit cleanly
@@ -181,6 +182,8 @@ function queryPhoneSystem1(pathEndpoint, payload) {
   });
 }
 
+let pendingActionResolver = null;
+
 function sendPromptToChrome(promptText) {
   return new Promise((resolve, reject) => {
     if (!activeSocket) {
@@ -190,6 +193,24 @@ function sendPromptToChrome(promptText) {
     }
     pendingResponseResolver = resolve;
     activeSocket.send(JSON.stringify({ type: 'PROMPT', text: promptText, safeMode: isSafeMode }));
+  });
+}
+
+function sendActionToChrome(actionPayload) {
+  return new Promise((resolve, reject) => {
+    if (!activeSocket) {
+      return reject(
+        new Error(`No browser extension connected. Open ${activePlatform} in Chrome with the extension active.`)
+      );
+    }
+    pendingActionResolver = resolve;
+    activeSocket.send(JSON.stringify(actionPayload));
+    setTimeout(() => {
+      if (pendingActionResolver === resolve) {
+        pendingActionResolver = null;
+        reject(new Error('Action timed out after 30s.'));
+      }
+    }, 30000);
   });
 }
 
@@ -376,6 +397,36 @@ function start() {
       return;
     }
 
+    if (req.method === 'POST' && req.url === '/v1/inspect') {
+      try {
+        const result = await sendActionToChrome({ type: 'INSPECT' });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/v1/action') {
+      let body = '';
+      req.on('data', (chunk) => (body += chunk));
+      req.on('end', async () => {
+        try {
+          const payload = JSON.parse(body || '{}');
+          const result = await sendActionToChrome({ type: 'ACTION', ...payload });
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(result));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+      return;
+    }
+
+
 
     if (req.method === 'POST' && req.url === '/v1/chat/completions') {
       let body = '';
@@ -496,22 +547,33 @@ function start() {
 
   wss.on('connection', (ws) => {
     allSockets.add(ws);
-    activeSocket = ws;
-    console.log(`\n\x1b[32m[Bridge Connected]\x1b[0m Browser extension attached on ws://localhost:${WS_PORT}`);
+
     // Send initial configuration to extension
     ws.send(JSON.stringify({ type: 'CONFIG', safeMode: isSafeMode }));
 
     ws.on('message', (message) => {
       try {
         const data = JSON.parse(message);
+
+        if (data.type === 'REGISTER_SERVICE_WORKER') {
+          console.log(`\x1b[32m[Reloader Attached]\x1b[0m Background service worker active.`);
+          return;
+        }
+
         if (data.type === 'HELLO' || data.type === 'STATUS') {
+          activeSocket = ws;
           if (data.platform) activePlatform = data.platform;
           if (data.model) activeModel = data.model;
+          console.log(`\n\x1b[32m[Bridge Connected]\x1b[0m ${activePlatform} tab attached on ws://localhost:${WS_PORT}`);
           console.log(`\x1b[35m[Active Session]\x1b[0m Platform: ${activePlatform} | Model: ${activeModel}`);
         } else if (data.type === 'RESPONSE' && pendingResponseResolver) {
           const resolve = pendingResponseResolver;
           pendingResponseResolver = null;
           resolve(data.text);
+        } else if ((data.type === 'ACTION_RESULT' || data.type === 'INSPECT_RESULT') && pendingActionResolver) {
+          const resolve = pendingActionResolver;
+          pendingActionResolver = null;
+          resolve(data);
         } else if (data.type === 'ERROR') {
           console.error(`\x1b[31m[Extension Error]\x1b[0m ${data.message}`);
         }
@@ -521,9 +583,9 @@ function start() {
     });
 
     ws.on('close', () => {
-      console.log('\n\x1b[31m[Bridge Disconnected]\x1b[0m Browser extension detached.');
       allSockets.delete(ws);
       if (activeSocket === ws) {
+        console.log('\n\x1b[31m[Bridge Disconnected]\x1b[0m Browser webchat tab detached.');
         activeSocket = null;
       }
     });
@@ -554,43 +616,45 @@ function start() {
     console.log(`Waiting for browser connection (Gemini / ChatGPT / Claude)...`);
   });
 
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    prompt: '\ngemini-bridge> '
-  });
+  if (process.stdin.isTTY && !args.includes('--daemon') && !args.includes('-d')) {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      prompt: '\ngemini-bridge> '
+    });
 
-  rl.prompt();
-
-  rl.on('line', async (line) => {
-    const input = line.trim();
-    if (!input) {
-      rl.prompt();
-      return;
-    }
-
-    if (input === 'reload') {
-      broadcastReload();
-      rl.prompt();
-      return;
-    }
-
-    if (input === 'exit' || input === 'quit') {
-      console.log('Exiting Gemini Bridge...');
-      process.exit(0);
-    }
-
-    if (!activeSocket) {
-      console.log('\x1b[33mNotice: Browser extension is not connected yet.\x1b[0m');
-      console.log('1. Open Chrome at https://gemini.google.com, https://chatgpt.com, or https://claude.ai');
-      console.log('2. Ensure the unpacked Gemini Bridge extension is loaded and active.');
-      rl.prompt();
-      return;
-    }
-
-    await runAgentLoop(input);
     rl.prompt();
-  });
+
+    rl.on('line', async (line) => {
+      const input = line.trim();
+      if (!input) {
+        rl.prompt();
+        return;
+      }
+
+      if (input === 'reload') {
+        broadcastReload();
+        rl.prompt();
+        return;
+      }
+
+      if (input === 'exit' || input === 'quit') {
+        console.log('Exiting Gemini Bridge...');
+        process.exit(0);
+      }
+
+      if (!activeSocket) {
+        console.log('\x1b[33mNotice: Browser extension is not connected yet.\x1b[0m');
+        console.log('1. Open Chrome at https://gemini.google.com, https://chatgpt.com, or https://claude.ai');
+        console.log('2. Ensure the unpacked Gemini Bridge extension is loaded and active.');
+        rl.prompt();
+        return;
+      }
+
+      await runAgentLoop(input);
+      rl.prompt();
+    });
+  }
 }
 
 start();

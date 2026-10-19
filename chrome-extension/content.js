@@ -472,6 +472,168 @@
       }, 400);
     });
   }
+  async function executeAction(actionMsg) {
+    const { action, selector, textPattern, target } = actionMsg;
+
+    // 1. Generic Click
+    if (action === 'click') {
+      let el = null;
+      if (selector) el = document.querySelector(selector);
+      if (!el && (textPattern || target)) {
+        const reg = new RegExp(textPattern || target, 'i');
+        const candidates = document.querySelectorAll(
+          'button, [role="button"], [role="menuitem"], [role="tab"], [role="option"], [role="radio"], mat-chip, .model-pill, span, div'
+        );
+        for (const cand of candidates) {
+          const t = (cand.innerText || cand.textContent || '').trim();
+          const a = cand.getAttribute('aria-label') || '';
+          const d = cand.getAttribute('data-test-id') || '';
+          if (reg.test(t) || reg.test(a) || reg.test(d)) {
+            const rect = cand.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+              el = cand;
+              break;
+            }
+          }
+        }
+      }
+      if (!el) return { success: false, error: `Element not found for ${selector || textPattern || target}` };
+      simulateHumanClick(el);
+      return { success: true, clicked: (el.innerText || el.getAttribute('aria-label') || '').slice(0, 60) };
+    }
+
+    // 2. Configure Model and Thinking Level
+    if (action === 'configure_model') {
+      const targetModel = actionMsg.model || 'Argon';
+      const level = actionMsg.thinkingLevel || 'Medium';
+      const steps = [];
+
+      // A. Open model selector dropdown
+      const modelBtn =
+        document.querySelector('button[data-test-id="model-selector-button"]') ||
+        document.querySelector('button[aria-label*="model" i]') ||
+        document.querySelector('.model-pill') ||
+        document.querySelector('button:has(span.model-title)') ||
+        document.querySelector('button:has([data-test-id*="model"])');
+
+      if (modelBtn) {
+        simulateHumanClick(modelBtn);
+        steps.push('Opened model selector dropdown');
+        await new Promise((r) => setTimeout(r, 600));
+      }
+
+      // B. Select model option
+      const modelReg = new RegExp(targetModel, 'i');
+      const menuItems = document.querySelectorAll(
+        '[role="menuitem"], [role="option"], button, .mat-mdc-menu-item, mat-option, [data-test-id*="model"]'
+      );
+      let modelItem = null;
+      for (const item of menuItems) {
+        const t = (item.innerText || item.textContent || item.getAttribute('aria-label') || '').trim();
+        if (modelReg.test(t)) {
+          modelItem = item;
+          break;
+        }
+      }
+      if (modelItem) {
+        simulateHumanClick(modelItem);
+        steps.push(`Selected model: ${targetModel}`);
+        await new Promise((r) => setTimeout(r, 600));
+      } else {
+        steps.push(`Model option '${targetModel}' not found in open menu; attempting direct text match`);
+      }
+
+      // C. Set thinking level (e.g. Medium)
+      if (level) {
+        const levelReg = new RegExp(level, 'i');
+        const levelItems = document.querySelectorAll(
+          '[role="menuitem"], [role="option"], [role="radio"], button, mat-chip, .thinking-budget-chip, .thinking-level, [data-test-id*="thinking"]'
+        );
+        let levelItem = null;
+        for (const item of levelItems) {
+          const t = (item.innerText || item.textContent || item.getAttribute('aria-label') || '').trim();
+          if (levelReg.test(t)) {
+            levelItem = item;
+            break;
+          }
+        }
+        if (levelItem) {
+          simulateHumanClick(levelItem);
+          steps.push(`Selected thinking level: ${level}`);
+          await new Promise((r) => setTimeout(r, 400));
+        }
+      }
+
+      return { success: true, steps, currentModel: currentAdapter.getModelName() };
+    }
+
+    // 3. Switch to Task Mode
+    if (action === 'switch_mode') {
+      const modePattern = new RegExp(actionMsg.mode || 'Task', 'i');
+      const modeButtons = document.querySelectorAll(
+        'button, [role="tab"], [role="button"], mat-chip, .mode-toggle, [data-test-id*="mode"], .task-mode-button'
+      );
+      let modeBtn = null;
+      for (const btn of modeButtons) {
+        const t = (btn.innerText || btn.textContent || btn.getAttribute('aria-label') || '').trim();
+        if (modePattern.test(t)) {
+          modeBtn = btn;
+          break;
+        }
+      }
+      if (modeBtn) {
+        simulateHumanClick(modeBtn);
+        await new Promise((r) => setTimeout(r, 500));
+        return { success: true, mode: (modeBtn.innerText || modeBtn.getAttribute('aria-label') || '').trim() };
+      }
+      return { success: false, error: `Mode button for '${actionMsg.mode || 'Task'}' not found` };
+    }
+
+    // 4. Attach Device / Computer Access
+    if (action === 'attach_device') {
+      const deviceName = actionMsg.device || 'Mac Studio';
+      const devicePattern = new RegExp(deviceName, 'i');
+      const steps = [];
+
+      // Find attach/tools/computer button
+      const attachBtn =
+        document.querySelector('button[aria-label*="computer" i]') ||
+        document.querySelector('button[aria-label*="device" i]') ||
+        document.querySelector('button[aria-label*="attach" i]') ||
+        document.querySelector('button[aria-label*="tools" i]') ||
+        document.querySelector('button[data-test-id*="device"]') ||
+        document.querySelector('button[data-test-id*="computer"]') ||
+        document.querySelector('button[aria-label*="add" i]');
+
+      if (attachBtn) {
+        simulateHumanClick(attachBtn);
+        steps.push('Clicked attach/device control');
+        await new Promise((r) => setTimeout(r, 600));
+      }
+
+      // Find device option in menu
+      const options = document.querySelectorAll(
+        '[role="menuitem"], [role="option"], button, .device-item, span, div'
+      );
+      let deviceOption = null;
+      for (const opt of options) {
+        const t = (opt.innerText || opt.textContent || opt.getAttribute('aria-label') || '').trim();
+        if (devicePattern.test(t)) {
+          deviceOption = opt;
+          break;
+        }
+      }
+      if (deviceOption) {
+        simulateHumanClick(deviceOption);
+        steps.push(`Selected device: ${deviceName}`);
+        await new Promise((r) => setTimeout(r, 400));
+        return { success: true, steps, device: deviceName };
+      }
+      return { success: false, steps, error: `Device option for '${deviceName}' not found` };
+    }
+
+    return { success: false, error: `Unknown action: ${action}` };
+  }
 
   // 7. WebSocket Lifecycle
   function connect() {
@@ -522,6 +684,51 @@
           setStatus(isGenerating ? 'busy' : 'ready');
           return;
         }
+
+        if (msg.type === 'INSPECT') {
+          const elements = [];
+          const selectors =
+            'button, [role="button"], [role="menuitem"], [role="tab"], [role="option"], [role="radio"], mat-chip, .model-pill, [data-test-id], a, select, input';
+          document.querySelectorAll(selectors).forEach((el) => {
+            const text = (el.innerText || el.textContent || '').trim();
+            const ariaLabel = el.getAttribute('aria-label') || '';
+            const testId = el.getAttribute('data-test-id') || '';
+            const role = el.getAttribute('role') || el.tagName.toLowerCase();
+            const rect = el.getBoundingClientRect();
+            if ((text || ariaLabel || testId) && rect.width > 0 && rect.height > 0) {
+              elements.push({
+                tag: el.tagName.toLowerCase(),
+                role,
+                text: text.slice(0, 100),
+                ariaLabel,
+                testId,
+                id: el.id || '',
+                className: (el.className || '').toString().slice(0, 80)
+              });
+            }
+          });
+          socket.send(
+            JSON.stringify({
+              type: 'INSPECT_RESULT',
+              platform,
+              url: window.location.href,
+              currentModel: currentAdapter.getModelName(),
+              elements
+            })
+          );
+          return;
+        }
+
+        if (msg.type === 'ACTION') {
+          try {
+            const result = await executeAction(msg);
+            socket.send(JSON.stringify({ type: 'ACTION_RESULT', ...result }));
+          } catch (err) {
+            socket.send(JSON.stringify({ type: 'ACTION_RESULT', success: false, error: err.message }));
+          }
+          return;
+        }
+
 
         if (msg.type === 'PROMPT') {
           if (msg.safeMode !== undefined) {
