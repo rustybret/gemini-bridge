@@ -57,13 +57,16 @@
         );
       },
       findStopButton() {
+        const inputContainer = document.querySelector(
+          'chat-window, input-area, .input-area, bottom-container, .bottom-container, form, rich-textarea, .text-input-field'
+        );
+        const root = inputContainer || document;
         return (
-          document.querySelector('button[aria-label*="Stop response" i]') ||
-          document.querySelector('button[aria-label*="Stop" i]') ||
-          document.querySelector('button[data-test-id="stop-button"]') ||
-          document.querySelector('button[mattooltip*="Stop" i]') ||
-          document.querySelector('button.stop-button') ||
-          document.querySelector('.stop-button-container button')
+          root.querySelector('button[aria-label*="Stop response" i]') ||
+          root.querySelector('button[aria-label*="Stop generating" i]') ||
+          root.querySelector('button[data-test-id*="stop-generating" i]') ||
+          root.querySelector('button[data-test-id="stop-button"]') ||
+          root.querySelector('button.stop-button')
         );
       },
       getLatestResponseText() {
@@ -73,24 +76,22 @@
         if (responses.length > 0) {
           const last = responses[responses.length - 1];
 
-          // First look for .markdown elements outside thought/collapsible containers
-          const allMarkdowns = Array.from(last.querySelectorAll('.markdown'));
-          const responseMarkdowns = allMarkdowns.filter(
+          // Look for markdown element specifically outside thought blocks
+          const allMarkdowns = Array.from(last.querySelectorAll('.markdown, message-content, .model-response-text'));
+          const responseElements = allMarkdowns.filter(
             (m) =>
               !m.closest(
                 '.thought-container, .collapsible-thought, [data-test-id*="thought"], expandable-thought, .thinking-process, details'
               )
           );
 
-          if (responseMarkdowns.length > 0) {
-            const body = responseMarkdowns[responseMarkdowns.length - 1];
-            const text = (body.innerText || body.textContent || '').trim();
+          for (let i = responseElements.length - 1; i >= 0; i--) {
+            const text = (responseElements[i].innerText || responseElements[i].textContent || '').trim();
             if (text.length > 0) return text;
           }
 
-          // Fallback to last markdown or turn container
-          const markdownBody = allMarkdowns[allMarkdowns.length - 1] || last;
-          return (markdownBody.innerText || markdownBody.textContent || '').trim();
+          // Fallback: full text of the turn
+          return (last.innerText || last.textContent || '').trim();
         }
         const markdowns = document.querySelectorAll('.markdown');
         if (markdowns.length > 0) {
@@ -429,7 +430,7 @@
         // Check if text is only an intermediate thinking / tool-call status header
         const isThinkingOnly = (() => {
           const trimmed = currentText.trim();
-          if (!trimmed) return true;
+          if (!trimmed) return false;
           if (/^Thinking\s*(it\s*through)?…*/i.test(trimmed)) {
             const nonThinking = trimmed
               .split('\n')
@@ -455,7 +456,7 @@
               clearInterval(checkInterval);
               const finalText = currentAdapter.getLatestResponseText();
               resolve(finalText);
-            }, 3500);
+            }, 2500);
           }
         } else if ((stopBtn || isThinkingOnly) && settledTimer) {
           clearTimeout(settledTimer);
