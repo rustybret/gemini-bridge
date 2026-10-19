@@ -137,13 +137,23 @@
         return 'ChatGPT';
       },
       findInputBox() {
+        const dictate =
+          document.querySelector('button[aria-label="Dictate"]') ||
+          document.querySelector('button[aria-label="Start Voice"]') ||
+          document.querySelector('button[aria-label="Add files and more"]');
+        if (dictate) {
+          const container = dictate.closest('form, [data-testid*="composer"], div.relative, div.flex, div.w-full') || document;
+          const input = container.querySelector(
+            '#prompt-textarea, [contenteditable="true"], [role="textbox"], textarea, p[data-placeholder]'
+          );
+          if (input) return input;
+        }
         return (
           document.querySelector('#prompt-textarea') ||
+          document.querySelector('[contenteditable="true"][role="textbox"]') ||
+          document.querySelector('[contenteditable="true"]') ||
           document.querySelector('div#prompt-textarea') ||
           document.querySelector('textarea[data-id="root"]') ||
-          document.querySelector('div#prompt-textarea[contenteditable="true"]') ||
-          document.querySelector('div[contenteditable="true"][role="textbox"]') ||
-          document.querySelector('.ProseMirror[contenteditable="true"]') ||
           document.querySelector('textarea')
         );
       },
@@ -377,24 +387,28 @@
       return true;
     }
 
-    // Rich contenteditable / ProseMirror elements
+    // Rich contenteditable / ProseMirror elements (ChatGPT / Claude)
+    const target = input.querySelector('p') || input;
+    target.focus();
+
     try {
       const selection = window.getSelection();
       const range = document.createRange();
-      range.selectNodeContents(input);
+      range.selectNodeContents(target);
       selection.removeAllRanges();
       selection.addRange(range);
     } catch {}
 
     const inserted = document.execCommand('insertText', false, text);
     if (!inserted) {
-      input.textContent = text;
+      target.textContent = text;
     }
 
     if (typeof InputEvent === 'function') {
-      input.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: text, bubbles: true, cancelable: true }));
-      input.dispatchEvent(new InputEvent('input', { inputType: 'insertText', data: text, bubbles: true }));
+      target.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: text, bubbles: true, cancelable: true }));
+      target.dispatchEvent(new InputEvent('input', { inputType: 'insertText', data: text, bubbles: true }));
     }
+    target.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
     input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
     input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
     return true;
